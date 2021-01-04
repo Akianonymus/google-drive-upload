@@ -14,6 +14,7 @@ Options:\n
   -la | --list-accounts - Print all configured accounts in the config files.\n
   -ca | --create-account 'account name' - To create a new account with the given name if does not already exists.\n
   -da | --delete-account 'account name' - To delete an account information from config file. \n
+  -sa | --service-accounts 'service account json file path' - Use a bot service account. Should be in proper json format.\n
   -c | -C | --create-dir <foldername> - option to create directory. Will provide folder id. Can be used to provide input folder, see README.\n
   -r | --root-dir <google_folderid> or <google_folder_url> - google folder ID/URL to which the file/directory is going to upload.
       If you want to change the default value, then use this format, -r/--root-dir default=root_folder_id/root_folder_url\n
@@ -126,7 +127,7 @@ _setup_arguments() {
     CONFIG="${CONFIG:-${HOME}/.googledrive.conf}"
 
     # Configuration variables # Remote gDrive variables
-    unset ROOT_FOLDER CLIENT_ID CLIENT_SECRET REFRESH_TOKEN ACCESS_TOKEN
+    unset ROOT_FOLDER CLIENT_ID CLIENT_SECRET REFRESH_TOKEN ACCESS_TOKEN ACCESS_TOKEN_MODE
     export API_URL="https://www.googleapis.com"
     export API_VERSION="v3" \
         SCOPE="${API_URL}/auth/drive" \
@@ -167,6 +168,11 @@ _setup_arguments() {
             -da | --delete-account)
                 _check_longoptions "${1}" "${2}"
                 export DELETE_ACCOUNT_NAME="${2}" && shift
+                ;;
+            -sa | --service-account)
+                _check_longoptions "${1}" "${2}"
+                SERVICE_ACCOUNT_FILE="${2}"
+                ! [ -f "${SERVICE_ACCOUNT_FILE}" ] && printf "%s\n" "Error: Non-existent json file ( ${SERVICE_ACCOUNT_FILE} )." 1>&2 && exit 1
                 ;;
             -c | -C | --create-dir)
                 _check_longoptions "${1}" "${2}"
@@ -390,7 +396,7 @@ _setup_workspace() {
 
 ###################################################
 # Process all the values in "${FINAL_LOCAL_INPUT_ARRAY[@]}" & "${FINAL_ID_INPUT_ARRAY[@]}"
-# Globals: 22 variables, 17 functions
+# Globals: 22 variables, 18 functions
 #   Variables - FINAL_LOCAL_INPUT_ARRAY ( array ), ACCESS_TOKEN, VERBOSE, VERBOSE_PROGRESS
 #               WORKSPACE_FOLDER_ID, UPLOAD_MODE, SKIP_DUPLICATES, OVERWRITE, SHARE,
 #               UPLOAD_STATUS, COLUMNS, API_URL, API_VERSION, TOKEN_URL, LOG_FILE_ID
@@ -399,7 +405,7 @@ _setup_workspace() {
 #   Functions - _print_center, _clear_line, _newline, _support_ansi_escapes, _print_center_quiet
 #               _upload_file, _share_id, _is_terminal, _dirname,
 #               _create_directory, _json_value, _url_encode, _check_existing_file, _bytes_to_human
-#               _clone_file, _get_access_token_and_update, _get_rootdir_id
+#               _clone_file, _get_access_token_and_update, _get_rootdir_id, _generate_jwt
 # Arguments: None
 # Result: Upload/Clone all the input files/folders, if a folder is empty, print Error message.
 ###################################################

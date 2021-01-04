@@ -92,22 +92,28 @@ _check_dependencies() {
             command -v "${program}" 2>| /dev/null 1>&2 || error_list="${error_list}\n${program}"
         done
 
-    command -v tail 2>| /dev/null 1>&2 || warning_list="${warning_list}\ntail"
+    command -v tail 2>| /dev/null 1>&2 || sync_error="tail"
 
-    [ -n "${warning_list}" ] && {
-        [ -z "${UNINSTALL}" ] && {
+    command -v openssl 2>| /dev/null 1>&2 ||
+        openssl_error="openssl not installed. If not installed, service accounts ( '-sa | --service-account' flag ) will not work."
+
+    [ -z "${UNINSTALL}" ] && {
+
+        [ -n "${sync_error}" ] && {
             printf "Warning: "
-            printf "%b, " "${error_list}"
+            printf "%b, " "${sync_error}"
             printf "%b" "not found, sync script will be not installed/updated.\n"
+            SKIP_SYNC="true"
         }
-        SKIP_SYNC="true"
-    }
 
-    [ -n "${error_list}" ] && [ -z "${UNINSTALL}" ] && {
-        printf "Error: "
-        printf "%b, " "${error_list}"
-        printf "%b" "not found, install before proceeding.\n"
-        exit 1
+        [ -n "${openssl_error}" ] && printf "%s\n" "Warning: ${openssl_error}"
+
+        [ -n "${error_list}" ] && {
+            printf "Error: "
+            printf "%b, " "${error_list}"
+            printf "%b" "not found, install before proceeding.\n"
+            exit 1
+        }
     }
     return 0
 }

@@ -18,6 +18,9 @@
 > It utilizes google drive api v3 and google OAuth2.0 to generate access tokens and to authorize application for uploading files/folders to your google drive.
 
 - Minimal
+- Two modes of authentication
+  - Oauth credentials
+  - Service account credentials
 - Upload or Update files/folders
 - Recursive folder uploading
 - Sync your folders
@@ -51,6 +54,7 @@
   - [Updation](#updation)
 - [Usage](#usage)
   - [Generating Oauth Credentials](#generating-oauth-credentials)
+  - [Generating service account credentials](#generating-service-account-credentials)
   - [Enable Drive API](#enable-drive-api)
   - [First Run](#first-run)
   - [Config file](#config)
@@ -117,6 +121,9 @@ This repo contains two types of scripts, posix compatible and bash compatible.
 | mktemp           | To generate temporary files ( optional )               |
 | sleep            | Self explanatory                                       |
 | ps               | To manage different processes                          |
+| openssl          | For service account usage ( optional )                 |
+
+Note: If openssl if not installed, then `-sa | --service-account` flag won't work, but script will install successfully.
 
 <strong>If BASH is not available or BASH is available but version is less tham 4.x, then below programs are also required:</strong>
 
@@ -297,9 +304,13 @@ There are two methods:
 
 ## Usage
 
-First, we need to obtain our oauth credentials, here's how to do it:
+First, we have to authenticate.
+
+There are two ways to authenticate, oauth credentials or service accounts. Use any one.
 
 ### Generating Oauth Credentials
+
+To obtain oauth credentials, follow below steps:
 
 - Follow [Enable Drive API](#enable-drive-api) section.
 - Open [google console](https://console.developers.google.com/).
@@ -311,6 +322,24 @@ First, we need to obtain our oauth credentials, here's how to do it:
 - Download your credentials.json by clicking on the download button.
 
 Now, we have obtained our credentials, move to the [First run](#first-run) section to use those credentials:
+
+### Generating service account credentials
+
+To obtain service account credentials, follow below steps:
+
+- Follow [Enable Drive API](#enable-drive-api) section.
+- Open [google console](https://console.developers.google.com/).
+- Click on "Credentials".
+- Click "Create credentials" and select "Service account".
+- Provide name for service account and click on create. If successful, it should be on step 2.
+- Now tap on role and select owner. Click on continue. If successful, it should be on step 3.
+- Click on done.
+- Now click on manage service accounts.
+- Click on the service account name you created.
+- Click on add key, then tap on create new key. Choose json and tap on create.
+- If successful, a file should download in the .json format.
+
+Now, we have obtained our service account json, move to the [First run](#first-run) section to use those credentials:
 
 ### Enable Drive API
 
@@ -332,7 +361,13 @@ By this, a side bar is opened. At there, select "API & Services" -> "Library". A
 
 [Go back to oauth credentials setup](#generating-oauth-credentials)
 
+[Go back to service account generation](#generating-service-account-credentials)
+
 ### First Run
+
+On first run, there are two possibilities, either using oauth credentials or service account credentials.
+
+#### For Oauth
 
 On first run, the script asks for all the required credentials, which we have obtained in the previous section.
 
@@ -340,20 +375,33 @@ Execute the script: `gupload filename`
 
 Now, it will ask for following credentials:
 
-**Client ID:** Copy and paste from credentials.json
+-   **Client ID:** Copy and paste from credentials.json
 
-**Client Secret:** Copy and paste from credentials.json
+-   **Client Secret:** Copy and paste from credentials.json
 
-**Refresh Token:** If you have previously generated a refresh token authenticated to your account, then enter it, otherwise leave blank.
-If you don't have refresh token, script outputs a URL on the terminal script, open that url in a web browser and tap on allow. Copy the code and paste in the terminal.
+-   **Refresh Token:** If you have previously generated a refresh token authenticated to your account, then enter it, otherwise leave blank.
 
-**Root Folder:** Gdrive folder url/id from your account which you want to set as root folder. You can leave it blank and it takes `root` folder as default.
+    If you don't have refresh token, script outputs a URL on the terminal script, open that url in a web browser and tap on allow. Copy the code and paste in the terminal.
+
+-   **Root Folder:** Gdrive folder url/id from your account which you want to set as root folder. You can leave it blank and it takes `root` folder as default.
 
 If everything went fine, all the required credentials have been set, read the next section on how to upload a file/folder.
 
+#### For service accounts
+
+For using service account, use `-sa | --service-account` flag.
+
+Execute the script: `gupload filename -sa "service account json file path"`
+
+Note: For service accounts it is necessary to use the `-sa | --service-account` flag everytime.
+
+For more info, see `-sa | --service-account` flag in [Upload Script Custom Flags](#upload-script-custom-flags).
+
 ### Config
 
-After first run, the credentials are saved in config file. By default, the config file is `${HOME}/.googledrive.conf`.
+After first run, if oauth credentials are used, then credentials are saved in config file, otherwise for service accounts it is necessary to use the `-sa | --service-account` flag everytime.
+
+By default, the config file is `${HOME}/.googledrive.conf`.
 
 To change the default config file or use a different one temporarily, see `-z / --config` custom in [Upload Script Custom Flags](#upload-script-custom-flags).
 
@@ -375,6 +423,8 @@ where `${ACCOUNT_NAME}` is the name of the account.
 You can use a config file in multiple machines, the values that are explicitly required are `CLIENT_ID`, `CLIENT_SECRET` and `REFRESH_TOKEN`.
 
 If `ROOT_FOLDER` is not set, then it is asked if running in an interactive terminal, otherwise `root` is used.
+
+Note: `ROOT_FOLDER` will be not asked if running with a service account, `root` is automatically used unless and until specified by `--rootdir` flag.
 
 `ROOT_FOLDER_NAME`, `ACCESS_TOKEN` and `ACCESS_TOKEN_EXPIRY` are automatically generated using `REFRESH_TOKEN`.
 
@@ -411,6 +461,14 @@ Apart from basic usage, this script provides many flags for custom usecases, lik
 ### Upload Script Custom Flags
 
 These are the custom flags that are currently implemented:
+
+-   <strong>--sa | --service-accounts 'service account json file path'</strong>
+
+    Use a service account. Should be in proper json format.
+
+    To generate service accounts, see [service account generation](#generating-service-account-credentials) section.
+
+    ---
 
 -   <strong>-z | --config</strong>
 

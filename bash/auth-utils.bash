@@ -110,9 +110,10 @@ _delete_account() {
 ###################################################
 # Check Oauth credentials and create/update config file
 # Account name, Client ID, Client Secret, Refesh Token and Access Token
-# Globals: 12 variables, 6 functions
+# Globals: 13 variables, 6 functions
 #   Variables - CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN, ACCESS_TOKEN, ROOT_FOLDER, ROOT_FOLDER_NAME ( same vars with ACCOUNT_${ACCOUNT_NAME} prefix too )
 #               CONFIG, DELETE_ACCOUNT_NAME, NEW_ACCOUNT_NAME, LIST_ACCOUNTS, DEFAULT_ACCOUNT, ACCOUNT_NAME, CUSTOM_ACCOUNT_NAME, QUIET
+#               SERVICE_ACCOUNT_FILE
 #   Functions - _set_value, _account_exists, _check_client, _check_refresh_token, _check_access_token, _token_bg_service
 #               _delete_account, _set_account_name, _all_accounts
 # Arguments: 1
@@ -127,99 +128,122 @@ _check_credentials() {
 
     # delete account
     [[ -n ${DELETE_ACCOUNT_NAME} ]] && _delete_account "${DELETE_ACCOUNT_NAME}" && . "${CONFIG}"
-    # create account
-    [[ -n ${NEW_ACCOUNT_NAME} ]] && { _set_account_name "${NEW_ACCOUNT_NAME}" || return 1; }
-    # list all configured accounts
-    [[ -n ${LIST_ACCOUNTS} ]] && _all_accounts
 
-    # set account which will be used, priority NEW_ACCOUNT_NAME > CUSTOM_ACCOUNT_NAME > DEFAULT_ACCOUNT.
-    ACCOUNT_NAME="${NEW_ACCOUNT_NAME:-${CUSTOM_ACCOUNT_NAME:-${DEFAULT_ACCOUNT}}}"
-    [[ -z ${ACCOUNT_NAME} && -n ${DEFAULT_ACCOUNT} ]] && {
-        # this in case default account is set to a non existent or existent account
-        { _account_exists "${DEFAULT_ACCOUNT}" && ACCOUNT_NAME="${DEFAULT_ACCOUNT}"; } ||
-            { _update_config DEFAULT_ACCOUNT "" "${CONFIG}" && unset DEFAULT_ACCOUNT; }
-    }
+    if [[ -z ${SERVICE_ACCOUNT_FILE} ]]; then
+        # create account
+        [[ -n ${NEW_ACCOUNT_NAME} ]] && { _set_account_name "${NEW_ACCOUNT_NAME}" || return 1; }
+        # list all configured accounts
+        [[ -n ${LIST_ACCOUNTS} ]] && _all_accounts
 
-    # code to handle legacy config
-    # this will be triggered only if old config is present, convert to new format
-    # new account will be created with "default" name, if default already taken, then add a number as suffix
-    export CLIENT_ID CLIENT_SECRET REFRESH_TOKEN
-    [[ -n ${CLIENT_ID:+${CLIENT_SECRET:+${REFRESH_TOKEN}}} ]] && {
-        declare account_name="default" regex config_without_values
-        until ! _account_exists "${account_name}"; do
-            account_name="${account_name}$((count += 1))"
-        done
-        regex="^(CLIENT_ID=|CLIENT_SECRET=|REFRESH_TOKEN=|ROOT_FOLDER=|ROOT_FOLDER_NAME=|ACCESS_TOKEN=|ACCESS_TOKEN_EXPIRY=)"
-        config_without_values="$(grep -vE "${regex}" "${CONFIG}")"
-        chmod u+w "${CONFIG}" # change perms to edit
-        printf "%s\n%s\n%s\n%s\n%s\n%s\n" \
-            "ACCOUNT_${account_name}_CLIENT_ID=\"${CLIENT_ID}\"" \
-            "ACCOUNT_${account_name}_CLIENT_SECRET=\"${CLIENT_SECRET}\"" \
-            "ACCOUNT_${account_name}_REFRESH_TOKEN=\"${REFRESH_TOKEN}\"" \
-            "ACCOUNT_${account_name}_ROOT_FOLDER=\"${ROOT_FOLDER}\"" \
-            "ACCOUNT_${account_name}_ROOT_FOLDER_NAME=\"${ROOT_FOLDER_NAME}\"" \
-            "${config_without_values}" >| "${CONFIG}"
+        # set account which will be used, priority NEW_ACCOUNT_NAME > CUSTOM_ACCOUNT_NAME > DEFAULT_ACCOUNT.
+        ACCOUNT_NAME="${NEW_ACCOUNT_NAME:-${CUSTOM_ACCOUNT_NAME:-${DEFAULT_ACCOUNT}}}"
+        [[ -z ${ACCOUNT_NAME} && -n ${DEFAULT_ACCOUNT} ]] && {
+            # this in case default account is set to a non existent or existent account
+            { _account_exists "${DEFAULT_ACCOUNT}" && ACCOUNT_NAME="${DEFAULT_ACCOUNT}"; } ||
+                { _update_config DEFAULT_ACCOUNT "" "${CONFIG}" && unset DEFAULT_ACCOUNT; }
+        }
 
-        chmod "a-w-r-x,u+r" "${CONFIG}" # restore perms
+        # code to handle legacy config
+        # this will be triggered only if old config is present, convert to new format
+        # new account will be created with "default" name, if default already taken, then add a number as suffix
+        export CLIENT_ID CLIENT_SECRET REFRESH_TOKEN
+        [[ -n ${CLIENT_ID:+${CLIENT_SECRET:+${REFRESH_TOKEN}}} ]] && {
+            declare account_name="default" regex config_without_values
+            until ! _account_exists "${account_name}"; do
+                account_name="${account_name}$((count += 1))"
+            done
+            regex="^(CLIENT_ID=|CLIENT_SECRET=|REFRESH_TOKEN=|ROOT_FOLDER=|ROOT_FOLDER_NAME=|ACCESS_TOKEN=|ACCESS_TOKEN_EXPIRY=)"
+            config_without_values="$(grep -vE "${regex}" "${CONFIG}")"
+            chmod u+w "${CONFIG}" # change perms to edit
+            printf "%s\n%s\n%s\n%s\n%s\n%s\n" \
+                "ACCOUNT_${account_name}_CLIENT_ID=\"${CLIENT_ID}\"" \
+                "ACCOUNT_${account_name}_CLIENT_SECRET=\"${CLIENT_SECRET}\"" \
+                "ACCOUNT_${account_name}_REFRESH_TOKEN=\"${REFRESH_TOKEN}\"" \
+                "ACCOUNT_${account_name}_ROOT_FOLDER=\"${ROOT_FOLDER}\"" \
+                "ACCOUNT_${account_name}_ROOT_FOLDER_NAME=\"${ROOT_FOLDER_NAME}\"" \
+                "${config_without_values}" >| "${CONFIG}"
 
-        # reload config file
-        [[ -r ${CONFIG} ]] && . "${CONFIG}"
-        ACCOUNT_NAME="${ACCOUNT_NAME:-${account_name}}"
-    }
+            chmod "a-w-r-x,u+r" "${CONFIG}" # restore perms
 
-    # in case no account name was set
-    [[ -z ${ACCOUNT_NAME} ]] && {
-        # if accounts are configured but default account is not set
-        if _all_accounts 2>| /dev/null && [[ ${COUNT} -gt 0 ]]; then
-            if [[ ${COUNT} -eq 1 ]]; then
-                _set_value indirect ACCOUNT_NAME "ACC_1_ACC"
-            else
-                "${QUIET:-_print_center}" "normal" " Above accounts are configured, but default one not set. " "="
-                if [[ -t 1 ]]; then
-                    "${QUIET:-_print_center}" "normal" " Choose default account: " "-"
-                    until [[ -n ${DEFAULT_ACCOUNT} ]]; do
-                        printf -- "-> \e[?7l"
-                        read -r account_name
-                        printf '\e[?7h'
-                        if [[ ${account_name} -gt 0 && ${account_name} -le ${COUNT} ]]; then
-                            _set_value indirect ACCOUNT_NAME "ACC_${COUNT}_ACC"
-                        else
-                            _clear_line 1
-                        fi
-                    done
-                else
-                    # if not running in a terminal then choose 1st one as default
-                    printf "%s\n" "Warning: Script is not running in a terminal, choosing first account as default."
+            # reload config file
+            [[ -r ${CONFIG} ]] && . "${CONFIG}"
+            ACCOUNT_NAME="${ACCOUNT_NAME:-${account_name}}"
+        }
+
+        # in case no account name was set
+        [[ -z ${ACCOUNT_NAME} ]] && {
+            # if accounts are configured but default account is not set
+            if _all_accounts 2>| /dev/null && [[ ${COUNT} -gt 0 ]]; then
+                if [[ ${COUNT} -eq 1 ]]; then
                     _set_value indirect ACCOUNT_NAME "ACC_1_ACC"
+                else
+                    "${QUIET:-_print_center}" "normal" " Above accounts are configured, but default one not set. " "="
+                    if [[ -t 1 ]]; then
+                        "${QUIET:-_print_center}" "normal" " Choose default account: " "-"
+                        until [[ -n ${DEFAULT_ACCOUNT} ]]; do
+                            printf -- "-> \e[?7l"
+                            read -r account_name
+                            printf '\e[?7h'
+                            if [[ ${account_name} -gt 0 && ${account_name} -le ${COUNT} ]]; then
+                                _set_value indirect ACCOUNT_NAME "ACC_${COUNT}_ACC"
+                            else
+                                _clear_line 1
+                            fi
+                        done
+                    else
+                        # if not running in a terminal then choose 1st one as default
+                        printf "%s\n" "Warning: Script is not running in a terminal, choosing first account as default."
+                        _set_value indirect ACCOUNT_NAME "ACC_1_ACC"
+                    fi
                 fi
+            else
+                _set_account_name ""
             fi
-        else
-            _set_account_name ""
-        fi
-        UPDATE_DEFAULT_ACCOUNT="true" # update default account as it's not set already
-    }
+            UPDATE_DEFAULT_ACCOUNT="true" # update default account as it's not set already
+        }
 
-    _set_value indirect CLIENT_ID_VALUE "ACCOUNT_${ACCOUNT_NAME}_CLIENT_ID"
-    _set_value indirect CLIENT_SECRET_VALUE "ACCOUNT_${ACCOUNT_NAME}_CLIENT_SECRET"
-    _set_value indirect REFRESH_TOKEN_VALUE "ACCOUNT_${ACCOUNT_NAME}_REFRESH_TOKEN"
-    [[ -z ${CLIENT_ID_VALUE:+${CLIENT_SECRET_VALUE:+${REFRESH_TOKEN_VALUE}}} ]] && {
-        if [[ -t 1 ]]; then
-            [[ -n ${CUSTOM_ACCOUNT_NAME} ]] && "${QUIET:-_print_center}" "normal" " Error: No such account ( ${CUSTOM_ACCOUNT_NAME} ) exists. " "-" && return 1
-        else
-            printf "%s\n" "Error: Script is not running in a terminal, cannot ask for credentials."
-            printf "%s\n" "Add in config manually if terminal is not accessible. CLIENT_ID, CLIENT_SECRET and REFRESH_TOKEN is required. Check README for more info." && return 1
-        fi
-    }
+        _set_value indirect CLIENT_ID_VALUE "ACCOUNT_${ACCOUNT_NAME}_CLIENT_ID"
+        _set_value indirect CLIENT_SECRET_VALUE "ACCOUNT_${ACCOUNT_NAME}_CLIENT_SECRET"
+        _set_value indirect REFRESH_TOKEN_VALUE "ACCOUNT_${ACCOUNT_NAME}_REFRESH_TOKEN"
+        [[ -z ${CLIENT_ID_VALUE:+${CLIENT_SECRET_VALUE:+${REFRESH_TOKEN_VALUE}}} ]] && {
+            if [[ -t 1 ]]; then
+                [[ -n ${CUSTOM_ACCOUNT_NAME} ]] && "${QUIET:-_print_center}" "normal" " Error: No such account ( ${CUSTOM_ACCOUNT_NAME} ) exists. " "-" && return 1
+            else
+                printf "%s\n" "Error: Script is not running in a terminal, cannot ask for credentials."
+                printf "%s\n" "Add in config manually if terminal is not accessible. CLIENT_ID, CLIENT_SECRET and REFRESH_TOKEN is required. Check README for more info." && return 1
+            fi
+        }
 
-    {
-        _check_client ID "${ACCOUNT_NAME}" &&
-            _check_client SECRET "${ACCOUNT_NAME}" &&
-            _check_refresh_token "${ACCOUNT_NAME}" &&
-            _check_access_token "${ACCOUNT_NAME}" check
-    } || return 1
+        # set access token mode
+        export ACCESS_TOKEN_MODE="normal"
 
-    [[ -n ${UPDATE_DEFAULT_ACCOUNT} ]] && _update_config DEFAULT_ACCOUNT "${ACCOUNT_NAME}" "${CONFIG}"
+        {
+            _check_client ID "${ACCOUNT_NAME}" &&
+                _check_client SECRET "${ACCOUNT_NAME}" &&
+                _check_refresh_token "${ACCOUNT_NAME}"
+        } || return 1
 
+        [[ -n ${UPDATE_DEFAULT_ACCOUNT} ]] && _update_config DEFAULT_ACCOUNT "${ACCOUNT_NAME}" "${CONFIG}"
+    else
+        command -v openssl 2>| /dev/null 1>&2 ||
+            { "${QUIET:-_print_center}" 'normal' "Error: openssl not installed, install openssl to use '-sa | --service-account' flag." "=" 1>&2 && return 1; }
+
+        SERVICE_ACCOUNT_FILE_CONTENTS="$(< "${SERVICE_ACCOUNT_FILE}")" && export SERVICE_ACCOUNT_FILE_CONTENTS
+
+        ACCOUNT_NAME="SA_$(_json_value private_key_id 1 1 <<< "${SERVICE_ACCOUNT_FILE_CONTENTS}")_SA" ||
+            { "${QUIET:-_print_center}" 'normal' "Error: Invalid service account file." "=" 1>&2 && return 1; }
+
+        _set_value indirect "ACCOUNT_${ACCOUNT_NAME}_ACCESS_TOKEN" "ACCOUNT_${ACCOUNT_NAME}_ACCESS_TOKEN"
+        _set_value indirect "ACCOUNT_${ACCOUNT_NAME}_ACCESS_TOKEN_EXPIRY" "ACCOUNT_${ACCOUNT_NAME}_ACCESS_TOKEN_EXPIRY"
+        # set rootdir value to root and root dir name to SA Bot Drive
+        _set_value direct "ACCOUNT_${ACCOUNT_NAME}_ROOT_FOLDER" "root"
+        _set_value direct "ACCOUNT_${ACCOUNT_NAME}_ROOT_FOLDER_NAME" "SA Bot Drive"
+
+        # set access token mode
+        export ACCESS_TOKEN_MODE="sa"
+    fi
+
+    _check_access_token "${ACCOUNT_NAME}" check "${ACCESS_TOKEN_MODE}" || return 1
     [[ ${1} = "no_token_service" ]] || _token_bg_service # launch token bg service
     return 0
 }
@@ -299,7 +323,7 @@ _check_refresh_token() {
             "${QUIET:-_print_center}" "normal" " Checking refresh token.. " "-"
             if [[ ${refresh_token_value} =~ ${REFRESH_TOKEN_REGEX} ]]; then
                 _set_value direct REFRESH_TOKEN "${refresh_token_value}"
-                { _check_access_token "${account_name}" skip_check &&
+                { _check_access_token "${account_name}" skip_check "${ACCESS_TOKEN_MODE}" &&
                     _update_config "${refresh_token_name}" "${refresh_token_value}" "${CONFIG}" &&
                     _clear_line 1; } || check_error=true
             else
@@ -334,7 +358,7 @@ _check_refresh_token() {
 
             refresh_token_value="$(_json_value refresh_token 1 1 <<< "${response}" || :)"
             _set_value direct REFRESH_TOKEN "${refresh_token_value}"
-            { _check_access_token "${account_name}" skip_check "${response}" &&
+            { _check_access_token "${account_name}" skip_check "${ACCESS_TOKEN_MODE}" "${response}" &&
                 _update_config "${refresh_token_name}" "${refresh_token_value}" "${CONFIG}"; } || return 1
         }
         printf "\n"
@@ -351,18 +375,21 @@ _check_refresh_token() {
 ###################################################
 # Check access token and create/update if required
 # Also update in config
-# Globals: 9 variables, 3 functions
-#   Variables - CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN, TOKEN_URL, CONFIG, API_URL, API_VERSION, QUIET, ACCESS_TOKEN_REGEX
+# Globals: 10 variables, 3 functions
+#   Variables - CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN, TOKEN_URL, CONFIG, API_URL, API_VERSION
+#               QUIET, ACCESS_TOKEN_REGEX, SERVICE_ACCOUNT_FILE_CONTENTS
 #   Functions - _print_center, _update_config, _set_value
 # Arguments: 2
 #   ${1} = Account name ( if not given, then just ACCESS_TOKEN var is used )
 #   ${2} = if skip_check, then force create access token, else check with regex and expiry
-#   ${3} = json response ( optional )
+#   ${3} = normal or sa ( sa = service account )
+#   ${4} = if ${3} = normal; then json response ( optional )
+#          if ${3} = sa; then nothing
 # Result: read description & export ACCESS_TOKEN ACCESS_TOKEN_EXPIRY
 ###################################################
 _check_access_token() {
     export ACCESS_TOKEN_REGEX='ya29\.[0-9A-Za-z_-]+'
-    declare account_name="${1:-}" no_check="${2:-false}" response_json="${3:-}" \
+    declare account_name="${1:-}" no_check="${2:-false}" mode="${3:?}" response_json="${4:-}" \
         token_name token_expiry_name token_value token_expiry_value response
     declare token_name="${account_name:+ACCOUNT_${account_name}_}ACCESS_TOKEN"
     declare token_expiry_name="${token_name}_EXPIRY"
@@ -371,7 +398,21 @@ _check_access_token() {
     _set_value indirect token_expiry_value "${token_expiry_name}"
 
     [[ ${no_check} = skip_check || -z ${token_value} || ${token_expiry_value:-0} -lt "$(printf "%(%s)T\\n" "-1")" || ! ${token_value} =~ ${ACCESS_TOKEN_REGEX} ]] && {
-        response="${response_json:-$(curl --compressed -s -X POST --data "client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}&refresh_token=${REFRESH_TOKEN}&grant_type=refresh_token" "${TOKEN_URL}")}" || :
+        # check if normal or sa mode
+        case "${mode}" in
+            normal)
+                response="${response_json:-$(curl --compressed -s -X POST --data "client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}&refresh_token=${REFRESH_TOKEN}&grant_type=refresh_token" "${TOKEN_URL}")}" || :
+                ;;
+            sa)
+                declare assertion_data
+                # generate jwt
+                assertion_data="$(_generate_jwt "${SERVICE_ACCOUNT_FILE_CONTENTS}" "${SCOPE}")" || { printf "%s\n" "${assertion_data}" 1>&2 && return 1; }
+                response="$(curl --compressed -s --data "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${assertion_data}" "${TOKEN_URL}")" || :
+                # sa token jsons are not pretty printed
+                response="${response//,\"/$'\n'\"}"
+                ;;
+        esac
+
         if token_value="$(_json_value access_token 1 1 <<< "${response}")"; then
             token_expiry_value="$(($(printf "%(%s)T\\n" "-1") + $(_json_value expires_in 1 1 <<< "${response}") - 1))"
             _update_config "${token_name}" "${token_value}" "${CONFIG}"
@@ -412,7 +453,7 @@ _token_bg_service() {
             REMAINING_TOKEN_TIME="$((ACCESS_TOKEN_EXPIRY - CURRENT_TIME))"
             if [[ ${REMAINING_TOKEN_TIME} -le 300 ]]; then
                 # timeout after 30 seconds, it shouldn't take too long anyway, and update tmp config
-                CONFIG="${TMPFILE}_ACCESS_TOKEN" _timeout 30 _check_access_token "" skip_check || :
+                CONFIG="${TMPFILE}_ACCESS_TOKEN" _timeout 30 _check_access_token "" skip_check "${ACCESS_TOKEN_MODE}" || :
             else
                 TOKEN_PROCESS_TIME_TO_SLEEP="$(if [[ ${REMAINING_TOKEN_TIME} -le 301 ]]; then
                     printf "0\n"

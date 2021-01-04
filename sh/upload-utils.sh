@@ -55,6 +55,54 @@ _error_logging_upload() {
 }
 
 ###################################################
+# Generate rs256 jwt just with cli commands and shell
+# Specifically for gdrive service accounts usage
+# Globals: None
+# Arguments: 2
+#   ${1} = service account json file contents ( should contain client_email and private key )
+#   ${2} = SCOPE for gdrive ( if not given then global var SCOPE is used )
+# Result: print jwt
+# Refrences:
+#   https://stackoverflow.com/questions/46657001/how-do-you-create-an-rs256-jwt-assertion-with-bash-shell-scripting
+#   Inspired by implementation by Will Haley at:
+#     http://willhaley.com/blog/generate-jwt-with-bash/
+###################################################
+_generate_jwt() {
+    json_generate_jwt="${1:?Error: Give service json file name}"
+    scope_generate_jwt="${2:-${SCOPE}}" aud_generate_jwt="https://oauth2.googleapis.com/token"
+    header_generate_jwt='{"alg":"RS256","typ":"JWT"}' algo_generate_jwt="256"
+    unset scope_generate_jwt payload_data_generate_jwt iss_generate_jwt exp_generate_jwt iat_generate_jwt rsa_secret_generate_jwt \
+        signed_content_generate_jwt sign_generate_jwt
+
+    if iss_generate_jwt="$(printf "%s\n" "${json_generate_jwt}" | _json_value client_email 1 1)" &&
+        rsa_secret_generate_jwt="$(printf "%s\n" "${json_generate_jwt}" | _json_value private_key 1 1)"; then
+        rsa_secret_generate_jwt="$(printf "%b\n" "${rsa_secret_generate_jwt}")"
+    else
+        "${QUIET:-_print_center}" 'normal' "Error: Invalid service account file." "=" && return 1
+    fi
+
+    iat_generate_jwt="$(date +"%s")" exp_generate_jwt="$((iat_generate_jwt + 3400))"
+
+    b64enc() { openssl enc -base64 -A | sed -e "s|+|-|g" -e "s|/|_|g" -e "s|=||g"; }
+
+    payload_data_generate_jwt='{"iss":"'${iss_generate_jwt}'","scope":"'${scope_generate_jwt}'","aud":"'${aud_generate_jwt}'","exp":'${exp_generate_jwt}',"iat":'${iat_generate_jwt}'}'
+
+    {
+        signed_content_generate_jwt="$(printf "%s\n" "${header_generate_jwt}" | b64enc).$(printf "%s\n" "${payload_data_generate_jwt}" | b64enc)"
+        # Open file discriptor for rsa_secret
+        exec 5<< EOF
+$(printf "%s\n" "${rsa_secret_generate_jwt}")
+EOF
+        sign_generate_jwt="$(printf %s "${signed_content_generate_jwt}" | openssl dgst -binary -sha"${algo_generate_jwt}" -sign /dev/fd/5 | b64enc)"
+        # close file discriptor
+        exec 5<&-
+    } || return 1
+
+    printf '%s.%s\n' "${signed_content_generate_jwt}" "${sign_generate_jwt}"
+    return 0
+}
+
+###################################################
 # A small function to get rootdir id for files in sub folder uploads
 # Globals: 1 variable, 1 function
 #   Variables - DIRIDS

@@ -55,6 +55,47 @@ _error_logging_upload() {
 }
 
 ###################################################
+# Generate rs256 jwt just with cli commands and shell
+# Specifically for gdrive service accounts usage
+# Globals: None
+# Arguments: 2
+#   ${1} = service account json file contents ( should contain client_email and private key )
+#   ${2} = SCOPE for gdrive ( if not given then global var SCOPE is used )
+# Result: print jwt
+# Refrences:
+#   https://stackoverflow.com/questions/46657001/how-do-you-create-an-rs256-jwt-assertion-with-bash-shell-scripting
+#   Inspired by implementation by Will Haley at:
+#     http://willhaley.com/blog/generate-jwt-with-bash/
+###################################################
+_generate_jwt() {
+    declare json="${1:?Error: Give service json file contents}" \
+        scope="${2:-${SCOPE}}" aud="https://oauth2.googleapis.com/token" \
+        header='{"alg":"RS256","typ":"JWT"}' \
+        algo="256" scope payload_data iss exp iat rsa_secret signed_content sign
+
+    if iss="$(_json_value client_email 1 1 <<< "${json}")" &&
+        rsa_secret="$(_json_value private_key 1 1 <<< "${json}")"; then
+        rsa_secret="$(printf "%b\n" "${rsa_secret}")"
+    else
+        "${QUIET:-_print_center}" 'normal' "Error: Invalid service account file." "=" && return 1
+    fi
+
+    iat="$(printf "%(%s)T\\n" "-1")" exp="$((iat + 3400))"
+
+    b64enc() { : "$(openssl enc -base64 -A)" && : "${_//+/-}" && : "${_//\//_}" && printf "%s\n" "${_//=/}"; }
+
+    payload_data='{"iss":"'${iss}'","scope":"'${scope}'","aud":"'${aud}'","exp":'${exp}',"iat":'${iat}'}'
+
+    {
+        signed_content="$(b64enc <<< "${header}").$(b64enc <<< "${payload_data}")"
+        sign="$(printf %s "${signed_content}" | openssl dgst -binary -sha"${algo}" -sign <(printf '%s\n' "${rsa_secret}") | b64enc)"
+    } || return 1
+
+    printf '%s.%s\n' "${signed_content}" "${sign}"
+    return 0
+}
+
+###################################################
 # A small function to get rootdir id for files in sub folder uploads
 # Globals: 1 variable, 1 function
 #   Variables - DIRIDS
