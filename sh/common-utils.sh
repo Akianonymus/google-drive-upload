@@ -255,6 +255,23 @@ _print_center() {
 }
 
 ###################################################
+# Evaluates value1=value2
+# Globals: None
+# Arguments: 3
+#   ${1} = direct ( d ) or indirect ( i ) - ( evaluation mode )
+#   ${2} = var name
+#   ${3} = var value
+# Result: export value1=value2
+###################################################
+_set_value() {
+    mode_set_value="${1:?}" var_set_value="${2:?}" value_set_value="${3:?}"
+    case "${mode_set_value}" in
+        d | direct) export "${var_set_value}=${value_set_value}" ;;
+        i | indirect) export "${var_set_value}=$(eval printf "%s" \"\$"${value_set_value}"\")" ;;
+    esac
+}
+
+###################################################
 # Check if script terminal supports ansi escapes
 # Globals: 1 variable
 #   TERM

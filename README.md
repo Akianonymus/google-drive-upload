@@ -27,6 +27,7 @@
   - To anyone or a specific email.
 - Config file support
   - Easy to use on multiple machines.
+  - Support for multiple accounts in a single config.
 - Latest gdrive api used i.e v3
 - Pretty logging
 - Easy to install and update
@@ -359,15 +360,17 @@ To change the default config file or use a different one temporarily, see `-z / 
 This is the format of a config file:
 
 ```shell
-CLIENT_ID="client id"
-CLIENT_SECRET="client secret"
-REFRESH_TOKEN="refresh token"
+ACCOUNT_${ACCOUNT_NAME}_CLIENT_ID="client id"
+ACCOUNT_${ACCOUNT_NAME}_CLIENT_SECRET="client secret"
+ACCOUNT_${ACCOUNT_NAME}_REFRESH_TOKEN="refresh token"
 SYNC_DEFAULT_ARGS="default args of gupload command for gsync"
-ROOT_FOLDER_NAME="root folder name"
-ROOT_FOLDER="root folder id"
-ACCESS_TOKEN="access token"
-ACCESS_TOKEN_EXPIRY="access token expiry"
+ACCOUNT_${ACCOUNT_NAME}_ROOT_FOLDER_NAME="root folder name"
+ACCOUNT_${ACCOUNT_NAME}_ROOT_FOLDER="root folder id"
+ACCOUNT_${ACCOUNT_NAME}_ACCESS_TOKEN="access token"
+ACCOUNT_${ACCOUNT_NAME}_ACCESS_TOKEN_EXPIRY="access token expiry"
 ```
+
+where `${ACCOUNT_NAME}` is the name of the account.
 
 You can use a config file in multiple machines, the values that are explicitly required are `CLIENT_ID`, `CLIENT_SECRET` and `REFRESH_TOKEN`.
 
@@ -382,13 +385,12 @@ A pre-generated config file can be also used where interactive terminal access i
 Just have to print values to `"${HOME}/.googledrive.conf"`, e.g:
 
 ```shell
-printf "%s\n" "CLIENT_ID=\"client id\"
-CLIENT_SECRET=\"client secret\"
-REFRESH_TOKEN=\"refresh token\"
-" >| "${HOME}/.googledrive.conf"
+printf "%s\n" '
+ACCOUNT_${ACCOUNT_NAME}_CLIENT_ID="client id"
+ACCOUNT_${ACCOUNT_NAME}_CLIENT_SECRET="client secret"
+ACCOUNT_${ACCOUNT_NAME}_REFRESH_TOKEN="refresh token"
+' >| "${HOME}/.googledrive.conf"
 ```
-
-Note: Don't skip those backslashes before the double qoutes, it's necessary to handle spacing.
 
 ### Upload
 
@@ -419,6 +421,36 @@ These are the custom flags that are currently implemented:
     If you want to change the default value of the config path, then use this format,
 
     `gupload --config default=your_config_file_path`
+
+    ---
+
+-   <strong>-a | --account 'account name'</strong>
+
+    Use different account than the default one.
+
+    To change the default account name, do
+
+    `gupload -a/--account default=account_name`
+
+    ---
+
+-   <strong>-la | --list-accounts</strong>
+
+    Print all configured accounts in the config files.
+
+    ---
+
+-   <strong>-ca | --create-account 'account name'</strong>
+
+    To create a new account with the given name if does not already exists. If the given account exists then script will ask for a new name.
+
+    Note: Only for interactive terminal usage.
+
+    ---
+
+-   <strong>-da | --delete-account 'account name'</strong>
+
+    To delete an account information from config file.
 
     ---
 
